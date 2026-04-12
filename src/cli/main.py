@@ -12,7 +12,9 @@ import click
 
 from src.cli.commands.link import link
 from src.cli.commands.orphans import orphans
+from src.cli.commands.progress import progress
 from src.cli.commands.project import project
+from src.cli.commands.report import report
 from src.cli.commands.sync import sync
 from src.cli.commands.task import task
 
@@ -35,6 +37,8 @@ cli.add_command(sync)
 cli.add_command(orphans)
 cli.add_command(link)
 cli.add_command(task)
+cli.add_command(progress)
+cli.add_command(report)
 
 
 if __name__ == "__main__":

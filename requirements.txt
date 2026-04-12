@@ -2,6 +2,7 @@
 # Phase 1 - GitHub Sync
 # Phase 1.5 - Scope Filtering & Commit Parsing
 # Phase 2 & 2.5 - Notion Sync, Linking, Dependencies, Sub-tasks
+# Phase 3 - Progress Calculator & Report Generator
 psycopg2-binary>=2.9.9
 redis>=5.0.1
 python-dotenv>=1.0.0
@@ -15,3 +16,5 @@ python-dateutil>=2.8.2
 tenacity>=8.2.3
 sentence-transformers>=2.2.2
 numpy>=1.24.0
+celery>=5.3.0
+requests>=2.31.0

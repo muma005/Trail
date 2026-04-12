@@ -292,3 +292,33 @@ class SubTask(Base):
 
     def __repr__(self):
         return f"<SubTask(title={self.title}, done={self.is_completed})>"
+
+
+class ProjectSnapshot(Base):
+    """
+    Phase 3: Daily progress snapshot for a project.
+    Tracks task counts, commit counts, and completion percentages.
+    """
+    __tablename__ = "project_snapshots"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    snapshot_date = Column(Date, nullable=False)
+    total_tasks = Column(Integer, default=0)
+    completed_tasks = Column(Integer, default=0)
+    in_progress_tasks = Column(Integer, default=0)
+    blocked_tasks = Column(Integer, default=0)
+    not_started_tasks = Column(Integer, default=0)
+    total_commits = Column(Integer, default=0)
+    lines_of_code_added = Column(Integer, default=0)
+    completion_percentage_simple = Column(Numeric(5, 2))
+    completion_percentage_weighted = Column(Numeric(5, 2))
+    snapshot_metadata = Column("metadata", JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ProjectSnapshot(project={self.project_id}, date={self.snapshot_date})>"

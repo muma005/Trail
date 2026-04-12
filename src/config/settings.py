@@ -20,6 +20,10 @@ class Settings:
         self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self.github_token: Optional[str] = os.getenv("GITHUB_TOKEN")
         self.notion_token: Optional[str] = os.getenv("NOTION_TOKEN")
+        # Phase 3: OpenRouter
+        self.openrouter_api_key: Optional[str] = os.getenv("OPENROUTER_API_KEY")
+        self.openrouter_model: str = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+        self.openrouter_timeout: int = int(os.getenv("OPENROUTER_TIMEOUT", "60"))
 
     def validate_required(self) -> None:
         """Exit with clear message if any required env var is missing."""
