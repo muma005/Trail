@@ -1,20 +1,25 @@
 """
 SQLAlchemy ORM models for Trail.
-Defines the database schema in Python code.
 Phase 0: Core identity (projects, user_preferences, sync_logs)
-Phase 1: GitHub sync (commits table, last_synced_at on projects)
-Phase 1.5: Scope filtering (project_scopes), commit parsing (parsed_task_id, needs_classification)
+Phase 1: GitHub sync (commits, last_synced_at)
+Phase 1.5: Scope filtering (project_scopes), commit parsing
+Phase 2: Notion sync (notion_tasks, commit_task_links)
+Phase 2.5: Dependencies (task_dependencies, sub_tasks, size_tag)
 """
 import uuid
 from datetime import datetime, time
 from typing import Any, Dict, List
 
 from sqlalchemy import (
+    ARRAY,
+    Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     Time,
@@ -146,3 +151,144 @@ class SyncLog(Base):
     status = Column(String(20), nullable=False)      # 'success', 'failed', 'partial'
     message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# -------------------------------------------------------------------------
+# Phase 2: Notion sync & linking
+# -------------------------------------------------------------------------
+
+class NotionTask(Base):
+    """
+    Notion page/task synced from a project's Notion database.
+    Bulk upserted on notion_page_id to ensure idempotency.
+    """
+    __tablename__ = "notion_tasks"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    notion_page_id = Column(String(100), unique=True, nullable=False)
+    title = Column(Text, nullable=True)
+    status = Column(String(50), nullable=True)
+    priority = Column(String(20), nullable=True)
+    mooscow = Column(String(20), nullable=True)
+    due_date = Column(Date, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    progress_percentage = Column(Integer, nullable=True)
+    estimated_minutes = Column(Integer, nullable=True)
+    actual_minutes = Column(Integer, nullable=True)
+    tags = Column(ARRAY(String), nullable=True)
+    parent_task_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("notion_tasks.id"),
+        nullable=True,
+    )
+    # Phase 2.5: size tag
+    size_tag = Column(String(10), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    sub_tasks = relationship("SubTask", back_populates="parent_task", cascade="all, delete-orphan")
+    dependencies = relationship("TaskDependency", foreign_keys="TaskDependency.task_id", back_populates="task", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<NotionTask(id={self.notion_page_id[:8]}, title={self.title})>"
+
+
+class CommitTaskLink(Base):
+    """
+    Link between a commit and a Notion task.
+    confidence=1.0 means exact match; <1.0 means suggestion.
+    is_suggestion=True means pending user review.
+    """
+    __tablename__ = "commit_task_links"
+
+    commit_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("commits.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    task_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("notion_tasks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    confidence = Column(Numeric(3, 2), nullable=True)
+    is_suggestion = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CommitTaskLink(commit={self.commit_id[:8]}, task={self.task_id[:8]}, conf={self.confidence})>"
+
+
+# -------------------------------------------------------------------------
+# Phase 2.5: Dependencies & Sub-tasks
+# -------------------------------------------------------------------------
+
+class TaskDependency(Base):
+    """
+    Task dependency: task A blocks/blocked-by task B.
+    Supports cross-project dependencies via depends_on_project_id.
+    """
+    __tablename__ = "task_dependencies"
+    __table_args__ = (
+        CheckConstraint(
+            "depends_on_task_id IS NOT NULL OR depends_on_project_id IS NOT NULL",
+            name="chk_depends_not_null",
+        ),
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    task_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("notion_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    depends_on_task_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("notion_tasks.id"),
+        nullable=True,
+    )
+    depends_on_project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id"),
+        nullable=True,
+    )
+    dependency_type = Column(String(50), default="blocks")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    task = relationship("NotionTask", foreign_keys=[task_id], back_populates="dependencies")
+
+    def __repr__(self):
+        return f"<TaskDependency(task={self.task_id[:8]}, type={self.dependency_type})>"
+
+
+class SubTask(Base):
+    """
+    Sub-task parsed from Notion to_do blocks or child pages.
+    Linked to a parent NotionTask.
+    """
+    __tablename__ = "sub_tasks"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    parent_task_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("notion_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title = Column(Text, nullable=True)
+    is_completed = Column(Boolean, default=False)
+    estimated_minutes = Column(Integer, nullable=True)
+    order_index = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    parent_task = relationship("NotionTask", back_populates="sub_tasks")
+
+    def __repr__(self):
+        return f"<SubTask(title={self.title}, done={self.is_completed})>"

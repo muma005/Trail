@@ -10,9 +10,11 @@ Usage:
 """
 import click
 
+from src.cli.commands.link import link
 from src.cli.commands.orphans import orphans
 from src.cli.commands.project import project
 from src.cli.commands.sync import sync
+from src.cli.commands.task import task
 
 
 @click.group()
@@ -31,6 +33,8 @@ def cli():
 cli.add_command(project)
 cli.add_command(sync)
 cli.add_command(orphans)
+cli.add_command(link)
+cli.add_command(task)
 
 
 if __name__ == "__main__":
