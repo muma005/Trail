@@ -10,9 +10,11 @@ from rich.console import Console
 
 from src.config.settings import settings
 from src.core.connectors.github_connector import GitHubConnector
+from src.core.enrichment.commit_parser import classify_commit, parse_task_id
 from src.models.database.session import (
     get_commit_count,
     get_project_by_key,
+    get_project_scopes,
     init_db,
     log_sync_event,
     store_commits,
@@ -69,6 +71,16 @@ def github(project_key: str, full: bool):
             sync_mode = "Full" if full else "Initial"
             console.print(f"[cyan]{sync_mode} sync — fetching all commits[/cyan]")
 
+        # Get project scopes for filtering
+        scopes = get_project_scopes(project["id"])
+        allowed_branches = scopes.get("branches", [])
+        allowed_paths = scopes.get("paths", [])
+
+        if allowed_branches:
+            console.print(f"  [dim]Branch filter: {', '.join(allowed_branches)}[/dim]")
+        if allowed_paths:
+            console.print(f"  [dim]Path filter: {', '.join(allowed_paths)}[/dim]")
+
         # Build cache key
         cache_key = cache.build_commits_cache_key(
             repo_full_name=project["github_repo_url"].replace("https://github.com/", ""),
@@ -81,10 +93,21 @@ def github(project_key: str, full: bool):
             console.print(f"[yellow]⚡ Cache hit — using cached commit data[/yellow]")
             commits = cached_commits
         else:
-            # Fetch from GitHub API
+            # Fetch from GitHub API with scope filtering
             console.print(f"[cyan]Fetching commits from GitHub...[/cyan]")
             gh_connector = GitHubConnector(settings.github_token)
-            commits = gh_connector.fetch_commits(project["github_repo_url"], since=since_dt)
+
+            if allowed_branches or allowed_paths:
+                # Use filtered fetch
+                commits = gh_connector.fetch_filtered_commits(
+                    project["github_repo_url"],
+                    allowed_branches=allowed_branches,
+                    allowed_paths=allowed_paths,
+                    since=since_dt,
+                )
+            else:
+                # No scopes — fetch all
+                commits = gh_connector.fetch_commits(project["github_repo_url"], since=since_dt)
 
             # Cache the results
             if commits:
@@ -101,6 +124,18 @@ def github(project_key: str, full: bool):
             return
 
         console.print(f"  [dim]Fetched {len(commits)} commit(s) from GitHub[/dim]")
+
+        # Phase 1.5: Parse task IDs and classify commits
+        orphan_count = 0
+        for commit in commits:
+            task_id = parse_task_id(commit.get("message", ""))
+            commit["parsed_task_id"] = task_id
+            commit["needs_classification"] = 1 if classify_commit(commit.get("message", "")) else 0
+            if commit["needs_classification"]:
+                orphan_count += 1
+
+        if orphan_count > 0:
+            console.print(f"  [yellow]⚠ {orphan_count} commit(s) need classification (run 'trail orphans list')[/yellow]")
 
         # Store new commits in database
         console.print(f"[cyan]Storing commits in database...[/cyan]")

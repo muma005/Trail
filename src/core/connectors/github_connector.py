@@ -261,3 +261,137 @@ class GitHubConnector(BaseConnector):
             "lines_added": lines_added,
             "lines_deleted": lines_deleted,
         }
+
+    # -------------------------------------------------------------------------
+    # Phase 1.5: Branch and path filtering
+    # -------------------------------------------------------------------------
+
+    def fetch_filtered_commits(
+        self,
+        repo_url: str,
+        allowed_branches: Optional[List[str]] = None,
+        allowed_paths: Optional[List[str]] = None,
+        since: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch commits filtered by allowed branches and paths.
+        If no branches specified, fetches from default branch only.
+        If no paths specified, accepts all commits.
+
+        Args:
+            repo_url: Full GitHub URL
+            allowed_branches: List of branch names to include (None = all/default)
+            allowed_paths: List of path prefixes to include (None = all paths)
+            since: Only fetch commits after this datetime
+
+        Returns:
+            Deduplicated list of commit dictionaries
+        """
+        full_name = self._extract_repo_full_name(repo_url)
+
+        try:
+            self._check_rate_limit()
+            repo = self.client.get_repo(full_name)
+
+            # Determine which branches to fetch
+            branches_to_fetch = allowed_branches if allowed_branches else [repo.default_branch]
+            if not branches_to_fetch:
+                branches_to_fetch = [repo.default_branch]
+
+            logger.info(
+                f"Fetching commits from {full_name} for branches: {branches_to_fetch}"
+                f"{' with path filters: ' + str(allowed_paths) if allowed_paths else ''}"
+            )
+
+            # Fetch commits from each allowed branch, deduplicate by SHA
+            all_commits: Dict[str, Dict[str, Any]] = {}
+
+            for branch in branches_to_fetch:
+                try:
+                    branch_commits = self._fetch_with_retry(repo, since, sha=branch)
+                    for commit in branch_commits:
+                        sha = commit["sha"]
+                        if sha not in all_commits:
+                            all_commits[sha] = commit
+                except GitHubError as e:
+                    logger.warning(f"Failed to fetch commits from branch '{branch}': {e}")
+                    continue
+
+            # Filter by path if scopes defined
+            if allowed_paths:
+                filtered_commits = {}
+                for sha, commit in all_commits.items():
+                    if self._matches_path_filter(commit.get("files_changed", []), allowed_paths):
+                        filtered_commits[sha] = commit
+                    else:
+                        logger.debug(f"Filtered out commit {sha[:8]} — no matching paths")
+                all_commits = filtered_commits
+
+            # Return newest-first (commits from PyGithub are already in reverse chronological order)
+            result = list(all_commits.values())
+            logger.info(f"Filtered to {len(result)} commits after branch/path filtering")
+            return result
+
+        except UnknownObjectException:
+            raise GitHubRepoNotFoundError(f"Repository '{full_name}' not found.")
+        except GitHubError:
+            raise
+        except Exception as e:
+            raise GitHubError(f"Unexpected error fetching commits: {e}")
+
+    def _fetch_with_retry(
+        self,
+        repo,
+        since: Optional[datetime] = None,
+        sha: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch commits from a repository (or specific branch) with retry.
+
+        Args:
+            repo: PyGithub Repository object
+            since: Only fetch commits after this datetime
+            sha: Branch name to fetch from (None = all branches)
+
+        Returns:
+            List of commit dictionaries
+        """
+        commits = []
+        try:
+            kwargs = {}
+            if since:
+                kwargs["since"] = since
+            if sha:
+                kwargs["sha"] = sha
+
+            commit_iterator = repo.get_commits(**kwargs) if kwargs else repo.get_commits()
+
+            for commit in commit_iterator:
+                commit_data = self._parse_commit(commit)
+                commits.append(commit_data)
+
+        except RateLimitExceededException:
+            logger.warning("Rate limit exceeded, retrying...")
+            raise
+        except GithubException as e:
+            raise GitHubError(f"Failed to fetch commits: {e.status} - {e.data.get('message', 'Unknown error')}")
+
+        return commits
+
+    def _matches_path_filter(self, files_changed: List[Dict], allowed_paths: List[str]) -> bool:
+        """
+        Check if any changed file matches any allowed path prefix.
+
+        Args:
+            files_changed: List of {filename, additions, deletions}
+            allowed_paths: List of path prefixes (e.g., ['src/auth/', 'lib/'])
+
+        Returns:
+            True if at least one file matches an allowed path
+        """
+        for file_info in files_changed:
+            filename = file_info.get("filename", "")
+            for path in allowed_paths:
+                if filename.startswith(path):
+                    return True
+        return False

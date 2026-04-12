@@ -16,6 +16,7 @@ from src.models.database.session import (
     get_all_projects,
     init_db,
     log_sync_event,
+    save_project_scopes,
     upsert_user_preferences,
 )
 from src.utils.exceptions.base import (
@@ -47,12 +48,17 @@ def project():
 @click.option("--key", required=True, help="Unique project identifier (e.g., AUTH-01).")
 @click.option("--github", required=True, help="GitHub repository URL (https://github.com/owner/repo).")
 @click.option("--notion-db", required=True, help="Notion database ID (32-char hex string).")
+@click.option("--branch", multiple=True, help="Allowed branch(es). Can be repeated.")
+@click.option("--path", "paths", multiple=True, help="Allowed path prefix(es). Can be repeated.")
 @click.option("--work-start", default="09:00", help="Work start time (default: 09:00).")
 @click.option("--work-end", default="17:00", help="Work end time (default: 17:00).")
 @click.option("--timezone", default="UTC", help="Timezone (default: UTC).")
-def add_project(name, key, github, notion_db, work_start, work_end, timezone):
+def add_project(name, key, github, notion_db, branch, paths, work_start, work_end, timezone):
     """
     Register a new project with GitHub repo and Notion database.
+
+    Optional --branch and --path flags can filter which commits are tracked.
+    If no scopes provided, all branches and paths are accepted.
 
     Validates that both the GitHub repository and Notion database exist
     and are accessible before storing them.
@@ -89,6 +95,18 @@ def add_project(name, key, github, notion_db, work_start, work_end, timezone):
             github_repo_url=validated_github,
             notion_database_id=validated_notion,
         )
+
+        # Store branch/path scopes if provided
+        branch_list = list(branch)
+        path_list = list(paths)
+        if branch_list or path_list:
+            save_project_scopes(project_id, branch_list, path_list)
+            scope_msg = []
+            if branch_list:
+                scope_msg.append(f"branches: {', '.join(branch_list)}")
+            if path_list:
+                scope_msg.append(f"paths: {', '.join(path_list)}")
+            console.print(f"  [dim]Scopes:[/dim] {'; '.join(scope_msg)}")
 
         # Save user preferences (work hours, timezone)
         upsert_user_preferences(work_start, work_end, timezone)

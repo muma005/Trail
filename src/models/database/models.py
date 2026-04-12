@@ -3,12 +3,14 @@ SQLAlchemy ORM models for Trail.
 Defines the database schema in Python code.
 Phase 0: Core identity (projects, user_preferences, sync_logs)
 Phase 1: GitHub sync (commits table, last_synced_at on projects)
+Phase 1.5: Scope filtering (project_scopes), commit parsing (parsed_task_id, needs_classification)
 """
 import uuid
 from datetime import datetime, time
 from typing import Any, Dict, List
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -18,6 +20,7 @@ from sqlalchemy import (
     Time,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 
 from src.models.database.base import Base
 
@@ -33,6 +36,7 @@ class Project(Base):
     Both github_repo_url and notion_database_id have UNIQUE constraints
     to prevent cross-pollution.
     last_synced_at tracks incremental sync progress.
+    scopes relationship links to branch/path filters.
     """
     __tablename__ = "projects"
 
@@ -45,14 +49,45 @@ class Project(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Phase 1.5: scope filtering relationship
+    scopes = relationship("ProjectScope", back_populates="project", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<Project(key={self.project_key}, name={self.name})>"
+
+
+class ProjectScope(Base):
+    """
+    Phase 1.5: Defines which branches and paths a project tracks.
+    If no scopes exist for a project, all branches/paths are accepted.
+    """
+    __tablename__ = "project_scopes"
+    __table_args__ = (
+        CheckConstraint("scope_type IN ('branch', 'path')", name="chk_scope_type"),
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    scope_type = Column(String(20), nullable=False)  # 'branch' or 'path'
+    scope_value = Column(Text, nullable=False)       # e.g., 'main', 'src/auth/'
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    project = relationship("Project", back_populates="scopes")
+
+    def __repr__(self):
+        return f"<ProjectScope(project_id={self.project_id}, type={self.scope_type}, value={self.scope_value})>"
 
 
 class Commit(Base):
     """
     GitHub commit record linked to a project.
     files_changed stored as JSONB for flexible schema.
+    Phase 1.5: parsed_task_id and needs_classification for orphan detection.
     """
     __tablename__ = "commits"
 
@@ -70,6 +105,9 @@ class Commit(Base):
     files_changed = Column(JSONB, nullable=True)  # List of {filename, additions, deletions}
     lines_added = Column(Integer, default=0)
     lines_deleted = Column(Integer, default=0)
+    # Phase 1.5: commit message parsing
+    parsed_task_id = Column(String(100), nullable=True)
+    needs_classification = Column(Integer, default=0)  # 0=False, 1=True (SQLite compat)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):

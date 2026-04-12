@@ -28,7 +28,7 @@ def init_db() -> None:
 
 def _run_phase1_migration() -> None:
     """
-    Add Phase 1 columns/tables that may not exist from Phase 0.
+    Add Phase 1 + 1.5 columns/tables that may not exist from Phase 0.
     Uses raw SQL with existence checks for idempotency.
     """
     migration_sql = """
@@ -47,13 +47,32 @@ def _run_phase1_migration() -> None:
         files_changed JSONB,
         lines_added INTEGER DEFAULT 0,
         lines_deleted INTEGER DEFAULT 0,
+        parsed_task_id VARCHAR(100),
+        needs_classification BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT NOW()
     );
+
+    -- Create project_scopes table if not exists
+    CREATE TABLE IF NOT EXISTS project_scopes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        scope_type VARCHAR(20) NOT NULL CHECK (scope_type IN ('branch', 'path')),
+        scope_value TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (project_id, scope_type, scope_value)
+    );
+
+    -- Add Phase 1.5 columns to commits if table already existed
+    ALTER TABLE commits ADD COLUMN IF NOT EXISTS parsed_task_id VARCHAR(100);
+    ALTER TABLE commits ADD COLUMN IF NOT EXISTS needs_classification BOOLEAN DEFAULT FALSE;
 
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_commits_project_id ON commits(project_id);
     CREATE INDEX IF NOT EXISTS idx_commits_commit_date ON commits(commit_date);
     CREATE INDEX IF NOT EXISTS idx_projects_last_synced ON projects(last_synced_at);
+    CREATE INDEX IF NOT EXISTS idx_project_scopes_project_id ON project_scopes(project_id);
+    CREATE INDEX IF NOT EXISTS idx_commits_needs_classification ON commits(needs_classification) WHERE needs_classification = TRUE;
+    CREATE INDEX IF NOT EXISTS idx_commits_parsed_task_id ON commits(parsed_task_id);
     """
 
     db = SessionLocal()
@@ -247,7 +266,7 @@ def store_commits(project_id: str, commits: List[Dict[str, Any]]) -> int:
     Skips commits that already exist (by commit_sha).
     Returns the number of new commits inserted.
 
-    Uses raw SQL with execute_values for performance.
+    Phase 1.5: Also stores parsed_task_id and needs_classification.
     """
     from psycopg2.extras import execute_values
 
@@ -260,8 +279,6 @@ def store_commits(project_id: str, commits: List[Dict[str, Any]]) -> int:
         raw_conn = db.connection()
         cursor = raw_conn.cursor()
 
-        # Prepare values for execute_values
-        # Only insert commits whose sha doesn't already exist
         insert_count = 0
         for commit in commits:
             try:
@@ -270,13 +287,18 @@ def store_commits(project_id: str, commits: List[Dict[str, Any]]) -> int:
                 if cursor.fetchone():
                     continue  # Skip duplicate
 
+                # Phase 1.5: extract task classification fields
+                parsed_task_id = commit.get("parsed_task_id")
+                needs_classification = commit.get("needs_classification", 0)
+
                 # Insert new commit
                 execute_values(
                     cursor,
                     """
                     INSERT INTO commits (
                         project_id, commit_sha, author_name, author_email,
-                        commit_date, message, files_changed, lines_added, lines_deleted
+                        commit_date, message, files_changed, lines_added, lines_deleted,
+                        parsed_task_id, needs_classification
                     ) VALUES %s
                     """,
                     [(
@@ -289,14 +311,14 @@ def store_commits(project_id: str, commits: List[Dict[str, Any]]) -> int:
                         commit.get("files_changed"),
                         commit.get("lines_added", 0),
                         commit.get("lines_deleted", 0),
+                        parsed_task_id,
+                        needs_classification,
                     )],
-                    template="(%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 )
                 insert_count += 1
             except Exception as e:
                 # Log individual commit failures but continue
-                from src.utils.exceptions.base import TrailError
-                # Skip this commit, continue with others
                 pass
 
         raw_conn.commit()
@@ -354,5 +376,105 @@ def get_existing_commit_shas(project_id: str) -> set:
         return {row[0] for row in results}
     except Exception as e:
         raise DatabaseError(f"Failed to fetch existing commits: {e}")
+    finally:
+        db.close()
+
+
+# -------------------------------------------------------------------------
+# Phase 1.5: Scope and orphan operations
+# -------------------------------------------------------------------------
+
+def save_project_scopes(project_id: str, branches: List[str], paths: List[str]) -> None:
+    """
+    Save branch and path scopes for a project.
+    Replaces any existing scopes for this project.
+
+    Args:
+        project_id: Project UUID
+        branches: List of branch names to track
+        paths: List of path prefixes to track
+    """
+    from src.models.database.models import ProjectScope
+
+    db = SessionLocal()
+    try:
+        # Delete existing scopes for this project
+        db.query(ProjectScope).filter(ProjectScope.project_id == project_id).delete()
+
+        # Insert new scopes
+        for branch in branches:
+            scope = ProjectScope(project_id=project_id, scope_type="branch", scope_value=branch)
+            db.add(scope)
+        for path in paths:
+            scope = ProjectScope(project_id=project_id, scope_type="path", scope_value=path)
+            db.add(scope)
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise DatabaseError(f"Failed to save project scopes: {e}")
+    finally:
+        db.close()
+
+
+def get_project_scopes(project_id: str) -> Dict[str, List[str]]:
+    """
+    Get all scopes for a project.
+
+    Returns:
+        Dict with 'branches' and 'paths' keys, each containing a list of values.
+        Empty lists mean no filtering (accept all).
+    """
+    from src.models.database.models import ProjectScope
+
+    db = SessionLocal()
+    try:
+        scopes = db.query(ProjectScope).filter(ProjectScope.project_id == project_id).all()
+        branches = [s.scope_value for s in scopes if s.scope_type == "branch"]
+        paths = [s.scope_value for s in scopes if s.scope_type == "path"]
+        return {"branches": branches, "paths": paths}
+    except Exception as e:
+        raise DatabaseError(f"Failed to fetch project scopes: {e}")
+    finally:
+        db.close()
+
+
+def get_orphan_commits(project_key: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Get commits that need classification (no parsed task ID).
+
+    Args:
+        project_key: If provided, filter to this project only.
+
+    Returns:
+        List of dicts with commit SHA, date, message (truncated), and project name.
+    """
+    from src.models.database.models import Commit, Project
+
+    db = SessionLocal()
+    try:
+        query = (
+            db.query(Commit, Project.name, Project.project_key)
+            .join(Project, Commit.project_id == Project.id)
+            .filter(Commit.needs_classification == 1)
+            .order_by(Commit.commit_date.desc())
+        )
+
+        if project_key:
+            query = query.filter(Project.project_key == project_key)
+
+        results = query.all()
+        return [
+            {
+                "sha": commit.commit_sha,
+                "date": commit.commit_date,
+                "message": commit.message[:60] + ("..." if len(commit.message) > 60 else ""),
+                "project_name": proj_name,
+                "project_key": proj_key,
+            }
+            for commit, proj_name, proj_key in results
+        ]
+    except Exception as e:
+        raise DatabaseError(f"Failed to fetch orphan commits: {e}")
     finally:
         db.close()

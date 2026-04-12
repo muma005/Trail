@@ -10,6 +10,7 @@ Usage:
 """
 import click
 
+from src.cli.commands.orphans import orphans
 from src.cli.commands.project import project
 from src.cli.commands.sync import sync
 
@@ -29,6 +30,7 @@ def cli():
 # Register command groups
 cli.add_command(project)
 cli.add_command(sync)
+cli.add_command(orphans)
 
 
 if __name__ == "__main__":
