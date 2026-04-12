@@ -42,6 +42,7 @@ class Project(Base):
     to prevent cross-pollution.
     last_synced_at tracks incremental sync progress.
     scopes relationship links to branch/path filters.
+    Phase 4: status, last_commit_date, notification tracking for escalation.
     """
     __tablename__ = "projects"
 
@@ -51,6 +52,11 @@ class Project(Base):
     github_repo_url = Column(Text, unique=True, nullable=False)
     notion_database_id = Column(String(100), unique=True, nullable=False)
     last_synced_at = Column(DateTime, nullable=True)  # Phase 1: incremental sync
+    # Phase 4: status and escalation tracking
+    status = Column(String(20), default="active")  # active, archived, paused
+    last_commit_date = Column(DateTime, nullable=True)
+    last_warning_notified_at = Column(DateTime, nullable=True)
+    last_critical_notified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -122,7 +128,7 @@ class Commit(Base):
 class UserPreference(Base):
     """
     User work hours and timezone settings.
-    Single-user for now but designed with multi-user in mind.
+    Phase 4: abandonment thresholds for escalation engine.
     """
     __tablename__ = "user_preferences"
 
@@ -130,6 +136,10 @@ class UserPreference(Base):
     work_start = Column(Time, default=time(9, 0))
     work_end = Column(Time, default=time(17, 0))
     timezone = Column(String(50), default="UTC")
+    # Phase 4: escalation thresholds
+    warning_days = Column(Integer, default=7)
+    critical_days = Column(Integer, default=14)
+    archive_days = Column(Integer, default=21)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

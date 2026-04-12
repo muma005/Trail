@@ -10,6 +10,7 @@ Usage:
 """
 import click
 
+from src.cli.commands.dashboard import dashboard
 from src.cli.commands.link import link
 from src.cli.commands.orphans import orphans
 from src.cli.commands.progress import progress
@@ -39,6 +40,7 @@ cli.add_command(link)
 cli.add_command(task)
 cli.add_command(progress)
 cli.add_command(report)
+cli.add_command(dashboard)
 
 
 if __name__ == "__main__":

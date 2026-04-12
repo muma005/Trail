@@ -23,9 +23,11 @@ def report():
 
 @report.command("generate")
 @click.argument("project_key")
+@click.option("--format", "fmt", default="markdown", type=click.Choice(["markdown", "json", "text"]),
+              help="Output format (default: markdown).")
 @click.option("--output", "-o", default=None, help="Save report to this file.")
 @click.option("--model", default=None, help="OpenRouter model to use.")
-def generate(project_key: str, output: str, model: str):
+def generate(project_key: str, fmt: str, output: str, model: str):
     """
     Generate a resumption report for a project.
 
@@ -56,13 +58,22 @@ def generate(project_key: str, output: str, model: str):
         with console.status("[bold yellow]Generating report...[/bold yellow]"):
             report_text = workflow.generate(project["id"])
 
+        # Format output
+        from src.services.report_generator.context_retriever import ContextRetriever
+        context = ContextRetriever().retrieve(project["id"])
+        formatted_report = workflow.format_report(report_text, context, fmt=fmt)
+
         # Output
         if output:
             with open(output, "w") as f:
-                f.write(report_text)
-            console.print(f"[bold green]✓[/bold green] Report saved to [dim]{output}[/dim]")
+                f.write(formatted_report)
+            console.print(f"[bold green]✓[/bold green] Report saved to [dim]{output}[/dim] ([dim]format: {fmt}[/dim])")
         else:
-            console.print("\n" + report_text)
+            if fmt == "json":
+                # Pretty-print JSON
+                console.print_json(formatted_report)
+            else:
+                console.print("\n" + formatted_report)
 
     except DatabaseError as e:
         console.print(f"[bold red]Database Error:[/bold red] {e}")

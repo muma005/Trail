@@ -39,7 +39,7 @@ console = Console()
 
 @click.group()
 def project():
-    """Manage Trail projects (add, list, remove)."""
+    """Manage Trail projects (add, list, archive, resurrect)."""
     pass
 
 
@@ -187,6 +187,66 @@ def list_projects():
 
         console.print(table)
         console.print(f"\n[dim]Total: {len(projects)} project(s)[/dim]")
+
+    except DatabaseError as e:
+        console.print(f"[bold red]Database Error:[/bold red] {e}")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[bold red]Unexpected Error:[/bold red] {e}")
+        sys.exit(1)
+
+
+@project.command("archive")
+@click.option("--key", required=True, help="Project key to archive.")
+def archive_project(key: str):
+    """Archive a project (set status='archived'). Archived projects are excluded from sync, reports, and dashboard."""
+    try:
+        from src.models.database.base import SessionLocal
+        from src.models.database.models import Project
+
+        init_db()
+        db = SessionLocal()
+        try:
+            project = db.query(Project).filter(Project.project_key == key).first()
+            if not project:
+                console.print(f"[bold red]Error:[/bold red] Project '{key}' not found.")
+                sys.exit(1)
+
+            project.status = "archived"
+            db.commit()
+            console.print(f"[bold green]✓[/bold green] Project '{key}' archived.")
+        finally:
+            db.close()
+
+    except DatabaseError as e:
+        console.print(f"[bold red]Database Error:[/bold red] {e}")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[bold red]Unexpected Error:[/bold red] {e}")
+        sys.exit(1)
+
+
+@project.command("resurrect")
+@click.option("--key", required=True, help="Project key to resurrect.")
+def resurrect_project(key: str):
+    """Resurrect an archived project (set status='active')."""
+    try:
+        from src.models.database.base import SessionLocal
+        from src.models.database.models import Project
+
+        init_db()
+        db = SessionLocal()
+        try:
+            project = db.query(Project).filter(Project.project_key == key).first()
+            if not project:
+                console.print(f"[bold red]Error:[/bold red] Project '{key}' not found.")
+                sys.exit(1)
+
+            project.status = "active"
+            db.commit()
+            console.print(f"[bold green]✓[/bold green] Project '{key}' resurrected.")
+        finally:
+            db.close()
 
     except DatabaseError as e:
         console.print(f"[bold red]Database Error:[/bold red] {e}")

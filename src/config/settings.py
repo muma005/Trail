@@ -24,6 +24,8 @@ class Settings:
         self.openrouter_api_key: Optional[str] = os.getenv("OPENROUTER_API_KEY")
         self.openrouter_model: str = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
         self.openrouter_timeout: int = int(os.getenv("OPENROUTER_TIMEOUT", "60"))
+        # Phase 4: Escalation
+        self.slack_webhook_url: Optional[str] = os.getenv("SLACK_WEBHOOK_URL")
 
     def validate_required(self) -> None:
         """Exit with clear message if any required env var is missing."""
