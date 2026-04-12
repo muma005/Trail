@@ -332,3 +332,26 @@ class ProjectSnapshot(Base):
 
     def __repr__(self):
         return f"<ProjectSnapshot(project={self.project_id}, date={self.snapshot_date})>"
+
+
+class NotionCommand(Base):
+    """
+    Phase 5: Stores @ai commands detected in Notion pages.
+    Tracks processing status and response block ID.
+    """
+    __tablename__ = "notion_commands"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    page_id = Column(String(100), nullable=False)
+    block_id = Column(String(100), nullable=False)
+    command = Column(Text, nullable=False)
+    status = Column(String(20), default="pending")  # pending, processing, completed, failed
+    response_block_id = Column(String(100), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    processed_at = Column(DateTime, nullable=True)
