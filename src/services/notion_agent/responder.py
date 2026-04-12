@@ -12,7 +12,7 @@ from src.config.settings import settings
 from src.core.connectors.notion_connector import NotionConnector
 from src.models.database.base import SessionLocal
 from src.models.database.models import NotionCommand
-from src.services.notion_agent.basic_brain import BasicBrain
+from src.ai.brain.brain_core import BrainCore
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class NotionResponder:
     """
 
     def __init__(self):
-        self.brain = BasicBrain()
+        self.brain = BrainCore()
         self.connector = NotionConnector(settings.notion_token)
 
     def process_all_pending(self) -> Dict[str, int]:

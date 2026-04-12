@@ -28,10 +28,10 @@ def t1():
     assert callable(poll_notion_commands)
 test("Poller: all methods present", t1)
 
-# Test 2: Basic Brain exists and handles all command types
+# Test 2: Brain Core exists and handles all command types
 def t2():
-    from src.services.notion_agent.basic_brain import BasicBrain
-    brain = BasicBrain()
+    from src.ai.brain.brain_core import BrainCore
+    brain = BrainCore()
 
     # Test command routing
     assert "summarize" in brain.process_command("summarize this page", "page123").lower() or "empty" in brain.process_command("summarize this page", "page123").lower()
@@ -40,7 +40,7 @@ def t2():
     response = brain.process_command("do something weird", "page123")
     assert "summarize" in response.lower()
     assert "status" in response.lower()
-test("Basic Brain: command routing and unknown command response", t2)
+test("Brain Core: command routing and unknown command response", t2)
 
 # Test 3: Responder exists and has required methods
 def t3():
