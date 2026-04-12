@@ -1,19 +1,23 @@
 """
-SQLAlchemy ORM models for Trail Phase 0.
+SQLAlchemy ORM models for Trail.
 Defines the database schema in Python code.
+Phase 0: Core identity (projects, user_preferences, sync_logs)
+Phase 1: GitHub sync (commits table, last_synced_at on projects)
 """
 import uuid
 from datetime import datetime, time
+from typing import Any, Dict, List
 
 from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
     Time,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from src.models.database.base import Base
 
@@ -28,6 +32,7 @@ class Project(Base):
     Core identity: one project = one GitHub repo + one Notion database.
     Both github_repo_url and notion_database_id have UNIQUE constraints
     to prevent cross-pollution.
+    last_synced_at tracks incremental sync progress.
     """
     __tablename__ = "projects"
 
@@ -36,11 +41,39 @@ class Project(Base):
     name = Column(String(255), nullable=False)
     github_repo_url = Column(Text, unique=True, nullable=False)
     notion_database_id = Column(String(100), unique=True, nullable=False)
+    last_synced_at = Column(DateTime, nullable=True)  # Phase 1: incremental sync
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f"<Project(key={self.project_key}, name={self.name})>"
+
+
+class Commit(Base):
+    """
+    GitHub commit record linked to a project.
+    files_changed stored as JSONB for flexible schema.
+    """
+    __tablename__ = "commits"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    commit_sha = Column(String(40), unique=True, nullable=False)
+    author_name = Column(String(255), nullable=True)
+    author_email = Column(String(255), nullable=True)
+    commit_date = Column(DateTime, nullable=False)
+    message = Column(Text, nullable=False)
+    files_changed = Column(JSONB, nullable=True)  # List of {filename, additions, deletions}
+    lines_added = Column(Integer, default=0)
+    lines_deleted = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Commit(sha={self.commit_sha[:8]}, message={self.message[:30]})>"
 
 
 class UserPreference(Base):

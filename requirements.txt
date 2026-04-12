@@ -1,4 +1,5 @@
 # Phase 0 - Foundation & Identity Lock
+# Phase 1 - GitHub Sync
 psycopg2-binary>=2.9.9
 redis>=5.0.1
 python-dotenv>=1.0.0
@@ -9,3 +10,4 @@ SQLAlchemy>=2.0.23
 alembic>=1.13.0
 rich>=13.7.0
 python-dateutil>=2.8.2
+tenacity>=8.2.3

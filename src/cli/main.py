@@ -5,10 +5,13 @@ Registers command groups and subcommands.
 Usage:
     trail project add --name "Auth Service" --key "AUTH-01" --github "..." --notion-db "..."
     trail project list
+    trail sync github --project AUTH-01
+    trail sync github --project AUTH-01 --full
 """
 import click
 
 from src.cli.commands.project import project
+from src.cli.commands.sync import sync
 
 
 @click.group()
@@ -25,6 +28,7 @@ def cli():
 
 # Register command groups
 cli.add_command(project)
+cli.add_command(sync)
 
 
 if __name__ == "__main__":

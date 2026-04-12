@@ -1,11 +1,13 @@
 """
 Database session management and initialization utilities.
-Provides functions to create tables and manage sessions.
+Phase 0: Project CRUD, sync logging, user preferences
+Phase 1: Commit storage, project lookup by key, last_synced_at updates
 """
 from contextlib import contextmanager
-from typing import List
+from datetime import datetime, time
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from src.models.database.base import Base, SessionLocal, engine
 from src.utils.exceptions.base import DatabaseError
@@ -15,17 +17,68 @@ def init_db() -> None:
     """
     Create all tables that don't exist yet.
     Safe to call multiple times — won't overwrite existing data.
+    Also runs Phase 1 migration (adds columns if missing).
     """
     try:
         Base.metadata.create_all(bind=engine)
+        _run_phase1_migration()
     except Exception as e:
         raise DatabaseError(f"Failed to initialize database: {e}")
+
+
+def _run_phase1_migration() -> None:
+    """
+    Add Phase 1 columns/tables that may not exist from Phase 0.
+    Uses raw SQL with existence checks for idempotency.
+    """
+    migration_sql = """
+    -- Add last_synced_at to projects if missing
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMP;
+
+    -- Create commits table if not exists
+    CREATE TABLE IF NOT EXISTS commits (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        commit_sha VARCHAR(40) UNIQUE NOT NULL,
+        author_name VARCHAR(255),
+        author_email VARCHAR(255),
+        commit_date TIMESTAMP NOT NULL,
+        message TEXT NOT NULL,
+        files_changed JSONB,
+        lines_added INTEGER DEFAULT 0,
+        lines_deleted INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    -- Indexes
+    CREATE INDEX IF NOT EXISTS idx_commits_project_id ON commits(project_id);
+    CREATE INDEX IF NOT EXISTS idx_commits_commit_date ON commits(commit_date);
+    CREATE INDEX IF NOT EXISTS idx_projects_last_synced ON projects(last_synced_at);
+    """
+
+    db = SessionLocal()
+    try:
+        for statement in migration_sql.strip().split(";"):
+            statement = statement.strip()
+            if statement:
+                db.execute(text(statement))
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Migration may fail if objects already exist — that's OK
+        pass
+    finally:
+        db.close()
 
 
 def table_exists(table_name: str) -> bool:
     """Check if a table exists in the database."""
     return inspect(engine).has_table(table_name)
 
+
+# -------------------------------------------------------------------------
+# Phase 0: Project operations
+# -------------------------------------------------------------------------
 
 def get_all_projects() -> List:
     """Fetch all projects from the database, ordered by creation date."""
@@ -36,6 +89,33 @@ def get_all_projects() -> List:
         return db.query(Project).order_by(Project.created_at.desc()).all()
     except Exception as e:
         raise DatabaseError(f"Failed to fetch projects: {e}")
+    finally:
+        db.close()
+
+
+def get_project_by_key(project_key: str) -> Optional[Dict[str, Any]]:
+    """
+    Look up a project by its unique key.
+    Returns project dict or None if not found.
+    """
+    from src.models.database.models import Project
+
+    db = SessionLocal()
+    try:
+        project = db.query(Project).filter(Project.project_key == project_key).first()
+        if not project:
+            return None
+        return {
+            "id": project.id,
+            "project_key": project.project_key,
+            "name": project.name,
+            "github_repo_url": project.github_repo_url,
+            "notion_database_id": project.notion_database_id,
+            "last_synced_at": project.last_synced_at,
+            "created_at": project.created_at,
+        }
+    except Exception as e:
+        raise DatabaseError(f"Failed to fetch project '{project_key}': {e}")
     finally:
         db.close()
 
@@ -153,5 +233,126 @@ def upsert_user_preferences(work_start: str, work_end: str, timezone: str) -> No
     except Exception as e:
         db.rollback()
         raise DatabaseError(f"Failed to save user preferences: {e}")
+    finally:
+        db.close()
+
+
+# -------------------------------------------------------------------------
+# Phase 1: Commit operations
+# -------------------------------------------------------------------------
+
+def store_commits(project_id: str, commits: List[Dict[str, Any]]) -> int:
+    """
+    Bulk insert new commits into the database.
+    Skips commits that already exist (by commit_sha).
+    Returns the number of new commits inserted.
+
+    Uses raw SQL with execute_values for performance.
+    """
+    from psycopg2.extras import execute_values
+
+    if not commits:
+        return 0
+
+    db = SessionLocal()
+    try:
+        # Use raw connection for bulk insert
+        raw_conn = db.connection()
+        cursor = raw_conn.cursor()
+
+        # Prepare values for execute_values
+        # Only insert commits whose sha doesn't already exist
+        insert_count = 0
+        for commit in commits:
+            try:
+                # Check if commit already exists (by sha)
+                cursor.execute("SELECT 1 FROM commits WHERE commit_sha = %s", (commit["sha"],))
+                if cursor.fetchone():
+                    continue  # Skip duplicate
+
+                # Insert new commit
+                execute_values(
+                    cursor,
+                    """
+                    INSERT INTO commits (
+                        project_id, commit_sha, author_name, author_email,
+                        commit_date, message, files_changed, lines_added, lines_deleted
+                    ) VALUES %s
+                    """,
+                    [(
+                        project_id,
+                        commit["sha"],
+                        commit.get("author_name"),
+                        commit.get("author_email"),
+                        commit["date"],
+                        commit["message"],
+                        commit.get("files_changed"),
+                        commit.get("lines_added", 0),
+                        commit.get("lines_deleted", 0),
+                    )],
+                    template="(%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                )
+                insert_count += 1
+            except Exception as e:
+                # Log individual commit failures but continue
+                from src.utils.exceptions.base import TrailError
+                # Skip this commit, continue with others
+                pass
+
+        raw_conn.commit()
+        return insert_count
+
+    except Exception as e:
+        db.rollback()
+        raise DatabaseError(f"Failed to store commits: {e}")
+    finally:
+        db.close()
+
+
+def update_last_synced(project_id: str, last_commit_date: Optional[datetime]) -> None:
+    """
+    Update the last_synced_at timestamp for a project.
+    Uses the latest commit date if provided, otherwise current time.
+    """
+    from datetime import datetime as dt
+
+    from src.models.database.models import Project
+
+    db = SessionLocal()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if project:
+            project.last_synced_at = last_commit_date or dt.utcnow()
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        raise DatabaseError(f"Failed to update last_synced_at: {e}")
+    finally:
+        db.close()
+
+
+def get_commit_count(project_id: str) -> int:
+    """Get total number of commits stored for a project."""
+    from src.models.database.models import Commit
+
+    db = SessionLocal()
+    try:
+        return db.query(Commit).filter(Commit.project_id == project_id).count()
+    except Exception as e:
+        raise DatabaseError(f"Failed to count commits: {e}")
+    finally:
+        db.close()
+
+
+def get_existing_commit_shas(project_id: str) -> set:
+    """Get set of existing commit SHAs for a project (for duplicate checking)."""
+    from src.models.database.models import Commit
+
+    db = SessionLocal()
+    try:
+        results = db.query(Commit.commit_sha).filter(Commit.project_id == project_id).all()
+        return {row[0] for row in results}
+    except Exception as e:
+        raise DatabaseError(f"Failed to fetch existing commits: {e}")
     finally:
         db.close()
