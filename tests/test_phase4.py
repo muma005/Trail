@@ -53,11 +53,15 @@ def t3():
     assert hasattr(engine, 'check_stale_projects')
     assert hasattr(engine, '_send_warning')
     assert hasattr(engine, '_send_critical_alert')
-    assert hasattr(engine, '_archive_project')
-    assert hasattr(engine, '_post_notion_comment')
-    assert hasattr(engine, '_send_slack_message')
+    # Notification and archive moved to separate modules
+    from src.services.escalation.notifier import post_notion_comment, send_slack_message
+    from src.services.escalation.archive_manager import archive_project, resurrect_project
+    assert callable(post_notion_comment)
+    assert callable(send_slack_message)
+    assert callable(archive_project)
+    assert callable(resurrect_project)
     assert callable(check_stale_projects)
-test("Escalation engine: all methods present", t3)
+test("Escalation engine + notifier + archive_manager: all methods present", t3)
 
 # Test 4: ORM models have Phase 4 columns
 def t4():

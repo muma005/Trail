@@ -40,7 +40,7 @@ test("Embedding helper: loads gracefully", t2)
 
 # Test 3: Commit linker exists
 def t3():
-    from src.core.enrichment.enricher import CommitLinker
+    from src.core.enrichment.linker import CommitLinker
     linker = CommitLinker()
     assert hasattr(linker, 'exact_match_links')
     assert hasattr(linker, 'generate_embedding_suggestions')
@@ -79,7 +79,7 @@ test("Dependency extraction: Blocked by relations", t5)
 
 # Test 6: Sub-task extraction from to_do blocks
 def t6():
-    from src.core.enrichment.normalizer import extract_subtasks_from_blocks
+    from src.core.enrichment.subtask_aggregator import extract_subtasks_from_blocks
     blocks = [
         {
             "type": "to_do",

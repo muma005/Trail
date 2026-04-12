@@ -1,7 +1,7 @@
 """
-Task enrichment: dependencies, sub-tasks, and size tagging.
-Phase 2.5: Parses Notion relations for dependencies, to_do blocks for sub-tasks,
-and auto-classifies task sizes.
+Task enrichment: dependencies and size tagging.
+Phase 2.5: Parses Notion relations for dependencies and auto-classifies task sizes.
+Sub-task extraction moved to subtask_aggregator.py.
 """
 import logging
 import re
@@ -99,38 +99,3 @@ def extract_dependencies(task: Dict[str, Any], page_id_to_task_id: Dict[str, str
         logger.debug(f"Extracted {len(dependencies)} dependencies for task {local_task_id[:8]}")
 
     return dependencies
-
-
-def extract_subtasks_from_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Parse Notion to_do blocks into sub-tasks.
-    Each to_do block with a checkbox becomes a sub-task.
-
-    Args:
-        blocks: List of Notion block dicts from fetch_page_blocks()
-
-    Returns:
-        List of sub-task dicts with title, is_completed, order_index
-    """
-    subtasks = []
-    order = 0
-
-    for block in blocks:
-        block_type = block.get("type", "")
-        if block_type == "to_do":
-            to_do_data = block.get("to_do", {})
-            text_parts = to_do_data.get("rich_text", [])
-            title = " ".join(part.get("plain_text", "") for part in text_parts).strip()
-
-            if title:
-                subtasks.append({
-                    "title": title,
-                    "is_completed": to_do_data.get("checked", False),
-                    "order_index": order,
-                })
-                order += 1
-
-    if subtasks:
-        logger.debug(f"Extracted {len(subtasks)} sub-tasks from blocks")
-
-    return subtasks

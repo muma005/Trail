@@ -12,8 +12,9 @@ from src.config.settings import settings
 from src.core.connectors.github_connector import GitHubConnector
 from src.core.connectors.notion_connector import NotionConnector
 from src.core.enrichment.commit_parser import classify_commit, parse_task_id
-from src.core.enrichment.enricher import CommitLinker
-from src.core.enrichment.normalizer import classify_size, extract_dependencies, extract_subtasks_from_blocks
+from src.core.enrichment.linker import CommitLinker
+from src.core.enrichment.normalizer import classify_size, extract_dependencies
+from src.core.enrichment.subtask_aggregator import extract_subtasks_from_blocks
 from src.models.database.session import (
     get_commit_count,
     get_project_by_key,

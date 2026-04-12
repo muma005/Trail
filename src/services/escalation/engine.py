@@ -1,17 +1,15 @@
 """
 Escalation Engine.
-Phase 4: Monitors stale projects, sends notifications (Notion, Slack),
-and auto-archives abandoned projects.
+Phase 4: Monitors stale projects, delegates to notifier and archive_manager.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional
 
-import requests
-
-from src.config.settings import settings
 from src.models.database.base import SessionLocal
 from src.models.database.models import Project, UserPreference
+from src.services.escalation.archive_manager import archive_project
+from src.services.escalation.notifier import post_notion_comment, send_slack_message
 from src.utils.exceptions.base import NotionError
 
 logger = logging.getLogger(__name__)
@@ -58,14 +56,13 @@ class EscalationEngine:
                     # Calculate days idle
                     last_date = project.last_commit_date or project.last_synced_at
                     if not last_date:
-                        # No activity at all — use creation date as baseline
                         last_date = project.created_at
 
                     days_idle = (datetime.utcnow() - last_date).days if last_date else 999
 
-                    # Archive check (highest priority — happens first)
+                    # Archive check (highest priority)
                     if days_idle > archive_days:
-                        self._archive_project(db, project, days_idle)
+                        archive_project(project, days_idle)
                         results["archived"] += 1
                         continue
 
@@ -114,9 +111,8 @@ class EscalationEngine:
 
     def _send_warning(self, project: Project, days_idle: int) -> None:
         """Send a warning notification for a stale project."""
-        # Notion comment
         try:
-            self._post_notion_comment(
+            post_notion_comment(
                 project.notion_database_id,
                 f"⚠️ **Project Warning**: '{project.name}' has been idle for **{days_idle} days**.\n"
                 f"Please resume work or consider archiving."
@@ -128,20 +124,17 @@ class EscalationEngine:
 
     def _send_critical_alert(self, project: Project, days_idle: int) -> None:
         """Send a critical notification for a very stale project."""
-        # Notion comment
         try:
-            self._post_notion_comment(
+            post_notion_comment(
                 project.notion_database_id,
                 f"🚨 **CRITICAL**: '{project.name}' has been idle for **{days_idle} days**.\n"
-                f"If no action is taken, this project will be archived in "
-                f"**{project.critical_days - days_idle}** days."
+                f"If no action is taken, this project will be archived soon."
             )
         except NotionError as e:
             logger.error(f"Failed to post Notion comment for {project.project_key}: {e}")
 
-        # Slack webhook
         try:
-            self._send_slack_message(
+            send_slack_message(
                 f"🚨 *Project {project.name}* has been idle for *{days_idle} days*.\n"
                 f"Last activity: {project.last_commit_date or 'Never'}\n"
                 f"Link: `trail project resurrect --key {project.project_key}`"
@@ -151,69 +144,8 @@ class EscalationEngine:
 
         logger.critical(f"Critical alert sent for {project.project_key}: {days_idle} days idle")
 
-    def _archive_project(self, db, project: Project, days_idle: int) -> None:
-        """Archive a project that has exceeded the archive threshold."""
-        project.status = "archived"
-        db.commit()
-        logger.warning(
-            f"Project {project.project_key} archived after {days_idle} days idle."
-        )
-
-    def _post_notion_comment(self, database_id: str, message: str) -> None:
-        """
-        Post a comment to a Notion page.
-        Uses Notion's blocks API to append a callout block.
-        """
-        from src.core.connectors.notion_connector import NotionConnector
-
-        if not settings.notion_token:
-            raise NotionError("Notion token not configured")
-
-        connector = NotionConnector(settings.notion_token)
-
-        # Try to find the project page or use database
-        # For simplicity, we append a comment as a database comment
-        # In production, you'd link to the actual project page
-        try:
-            # Create a page comment on the database
-            connector.client.comments.create(
-                parent={"database_id": database_id},
-                rich_text=[{"type": "text", "text": {"content": message}}],
-            )
-        except Exception as e:
-            raise NotionError(f"Failed to post Notion comment: {e}")
-
-    def _send_slack_message(self, message: str) -> None:
-        """
-        Send a message to a Slack channel via webhook.
-        Requires SLACK_WEBHOOK_URL in .env.
-        """
-        webhook_url = getattr(settings, 'slack_webhook_url', None)
-        if not webhook_url:
-            logger.info("Slack webhook URL not configured, skipping Slack notification")
-            return
-
-        payload = {
-            "text": message,
-            "mrkdwn": True,
-        }
-
-        response = requests.post(
-            webhook_url,
-            json=payload,
-            timeout=10,
-        )
-
-        if response.status_code != 200:
-            raise Exception(f"Slack webhook failed: {response.status_code} - {response.text}")
-
-        logger.info(f"Slack message sent successfully")
-
 
 def check_stale_projects() -> Dict[str, int]:
-    """
-    Wrapper function for Celery Beat scheduling.
-    Can be called directly or scheduled.
-    """
+    """Wrapper function for Celery Beat scheduling."""
     engine = EscalationEngine()
     return engine.check_stale_projects()
