@@ -324,6 +324,25 @@ def _run_phase1_migration() -> None:
     CREATE INDEX IF NOT EXISTS idx_learned_patterns_user_type ON learned_patterns(user_id, pattern_type);
     CREATE INDEX IF NOT EXISTS idx_learned_patterns_context ON learned_patterns USING GIN(context);
     CREATE INDEX IF NOT EXISTS idx_learned_patterns_type_context ON learned_patterns(pattern_type, context);
+
+    -- Phase 9: AI Brain - Conversation & Memory
+    -- Note: pgvector extension requires PostgreSQL with vector support
+    -- For MVP without pgvector, we store embeddings as text and compute similarity in Python
+    CREATE TABLE IF NOT EXISTS conversations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID DEFAULT gen_random_uuid(),
+        session_id UUID NOT NULL,
+        role VARCHAR(20) NOT NULL,
+        content TEXT NOT NULL,
+        tool_calls TEXT,
+        tool_call_id VARCHAR(100),
+        timestamp TIMESTAMP DEFAULT NOW(),
+        embedding TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_conversations_role ON conversations(role);
     """
 
     db = SessionLocal()

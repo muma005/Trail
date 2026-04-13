@@ -559,3 +559,26 @@ class LearnedPattern(Base):
 
     def __repr__(self):
         return f"<LearnedPattern(type={self.pattern_type}, value={self.value}, samples={self.sample_count})>"
+
+
+class Conversation(Base):
+    """
+    Phase 9: Stores conversation messages for the AI Brain.
+    Includes vector embeddings for semantic memory retrieval.
+    """
+    __tablename__ = "conversations"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    user_id = Column(UUID(as_uuid=False), default=generate_uuid)
+    session_id = Column(UUID(as_uuid=False), nullable=False)
+    role = Column(String(20), nullable=False)  # user, assistant, system
+    content = Column(Text, nullable=False)
+    # Stored as JSON string for cross-database compatibility
+    tool_calls = Column(Text, nullable=True)
+    tool_call_id = Column(String(100), nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    # Vector embedding stored as byte array or text representation
+    embedding_text = Column("embedding", Text, nullable=True)
+
+    def __repr__(self):
+        return f"<Conversation(session={self.session_id[:8]}, role={self.role}, content={self.content[:30]})>"

@@ -27,6 +27,7 @@ from src.cli.commands.verify import verify
 from src.cli.commands.reassign import reassign
 from src.cli.commands.untracked import untracked
 from src.cli.commands.learning import learning
+from src.cli.commands.brain import brain
 
 
 @click.group()
@@ -58,6 +59,7 @@ cli.add_command(verify)
 cli.add_command(reassign)
 cli.add_command(untracked)
 cli.add_command(learning)
+cli.add_command(brain)
 
 
 if __name__ == "__main__":
