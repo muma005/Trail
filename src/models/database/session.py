@@ -196,6 +196,37 @@ def _run_phase1_migration() -> None:
     CREATE INDEX IF NOT EXISTS idx_notion_commands_status ON notion_commands(status);
     CREATE INDEX IF NOT EXISTS idx_notion_commands_project ON notion_commands(project_id);
     CREATE INDEX IF NOT EXISTS idx_notion_commands_page ON notion_commands(page_id);
+
+    -- Phase 6: Planner preferences and constraints
+    ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS max_parallel_projects INT DEFAULT 2;
+    ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS constant_project_id UUID REFERENCES projects(id);
+    ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS deep_work_minutes INT DEFAULT 120;
+    ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS lunch_start TIME;
+    ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS lunch_end TIME;
+
+    CREATE TABLE IF NOT EXISTS project_constraints (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID UNIQUE NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        estimated_remaining_hours DECIMAL(10,2) NOT NULL DEFAULT 0,
+        deadline DATE,
+        priority VARCHAR(20) DEFAULT 'Medium',
+        is_constant BOOLEAN DEFAULT FALSE,
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_plans (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+        plan_date DATE NOT NULL,
+        allocated_minutes INT NOT NULL,
+        tasks_planned JSONB,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (project_id, plan_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_project_constraints_project_id ON project_constraints(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_constraints_deadline ON project_constraints(deadline);
+    CREATE INDEX IF NOT EXISTS idx_daily_plans_date ON daily_plans(plan_date);
     """
 
     db = SessionLocal()

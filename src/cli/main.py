@@ -14,6 +14,7 @@ from src.cli.commands.dashboard import dashboard
 from src.cli.commands.link import link
 from src.cli.commands.notion import notion
 from src.cli.commands.orphans import orphans
+from src.cli.commands.plan import plan
 from src.cli.commands.progress import progress
 from src.cli.commands.project import project
 from src.cli.commands.report import report
@@ -43,6 +44,7 @@ cli.add_command(progress)
 cli.add_command(report)
 cli.add_command(dashboard)
 cli.add_command(notion)
+cli.add_command(plan)
 
 
 if __name__ == "__main__":

@@ -196,6 +196,130 @@ def list_projects():
         sys.exit(1)
 
 
+@project.command("estimate")
+@click.option("--project", "project_key", required=True, help="Project key.")
+@click.option("--hours", type=float, required=True, help="Estimated remaining hours.")
+@click.option("--deadline", default=None, help="Project deadline (YYYY-MM-DD).")
+@click.option("--priority", default=None, type=click.Choice(["Critical", "High", "Medium", "Low"]), help="Priority level.")
+@click.option("--constant", is_flag=True, default=False, help="Mark as constant project.")
+def set_estimate(project_key: str, hours: float, deadline: str, priority: str, constant: bool):
+    """
+    Set planning estimates for a project.
+
+    Updates estimated remaining hours, deadline, priority, and constant flag.
+    """
+    try:
+        from datetime import date
+
+        from src.models.database.base import SessionLocal
+        from src.models.database.models import Project, ProjectConstraint
+
+        init_db()
+        db = SessionLocal()
+        try:
+            project = db.query(Project).filter(Project.project_key == project_key).first()
+            if not project:
+                console.print(f"[bold red]Error:[/bold red] Project '{project_key}' not found.")
+                sys.exit(1)
+
+            # Get or create constraint
+            constraint = (
+                db.query(ProjectConstraint)
+                .filter(ProjectConstraint.project_id == project.id)
+                .first()
+            )
+            if not constraint:
+                constraint = ProjectConstraint(project_id=project.id)
+                db.add(constraint)
+
+            # Update fields
+            constraint.estimated_remaining_hours = Decimal(str(hours))
+            if deadline:
+                constraint.deadline = date.fromisoformat(deadline)
+            if priority:
+                constraint.priority = priority
+            if constant:
+                constraint.is_constant = True
+
+            from datetime import datetime as dt
+            constraint.updated_at = dt.utcnow()
+            db.commit()
+
+            console.print(f"[bold green]✓[/bold green] Estimate updated for '{project_key}'")
+            console.print(f"  [dim]Remaining:[/dim] {hours} hours")
+            if constraint.deadline:
+                console.print(f"  [dim]Deadline:[/dim] {constraint.deadline}")
+            console.print(f"  [dim]Priority:[/dim] {constraint.priority}")
+            console.print(f"  [dim]Constant:[/dim] {'Yes' if constraint.is_constant else 'No'}")
+
+        finally:
+            db.close()
+
+    except DatabaseError as e:
+        console.print(f"[bold red]Database Error:[/bold red] {e}")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[bold red]Unexpected Error:[/bold red] {e}")
+        sys.exit(1)
+
+
+@project.command("constraints")
+def show_constraints():
+    """List all projects with their planning constraints."""
+    try:
+        from src.models.database.base import SessionLocal
+        from src.models.database.models import Project, ProjectConstraint
+
+        init_db()
+        db = SessionLocal()
+        try:
+            results = (
+                db.query(Project, ProjectConstraint)
+                .outerjoin(ProjectConstraint, Project.id == ProjectConstraint.project_id)
+                .filter(Project.status == "active")
+                .all()
+            )
+
+            if not results:
+                console.print("[yellow]No active projects.[/yellow]")
+                return
+
+            table = Table(title="Project Constraints")
+            table.add_column("Key", style="cyan", no_wrap=True)
+            table.add_column("Name", style="green")
+            table.add_column("Remaining (h)", justify="right")
+            table.add_column("Deadline", style="dim")
+            table.add_column("Priority", justify="center")
+            table.add_column("Constant", justify="center")
+
+            for proj, constraint in results:
+                hours = float(constraint.estimated_remaining_hours) if constraint else 0
+                deadline = str(constraint.deadline) if constraint and constraint.deadline else "—"
+                prio = constraint.priority if constraint else "—"
+                is_const = "⭐" if (constraint and constraint.is_constant) else ""
+
+                table.add_row(
+                    proj.project_key,
+                    proj.name,
+                    f"{hours:.1f}",
+                    deadline,
+                    prio,
+                    is_const,
+                )
+
+            console.print(table)
+
+        finally:
+            db.close()
+
+    except DatabaseError as e:
+        console.print(f"[bold red]Database Error:[/bold red] {e}")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[bold red]Unexpected Error:[/bold red] {e}")
+        sys.exit(1)
+
+
 @project.command("archive")
 @click.option("--key", required=True, help="Project key to archive.")
 def archive_project(key: str):

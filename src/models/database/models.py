@@ -355,3 +355,48 @@ class NotionCommand(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     processed_at = Column(DateTime, nullable=True)
+
+
+class ProjectConstraint(Base):
+    """
+    Phase 6: Planning-specific data per project.
+    Tracks remaining hours, deadline, priority, constant flag.
+    """
+    __tablename__ = "project_constraints"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    estimated_remaining_hours = Column(Numeric(10, 2), default=0, nullable=False)
+    deadline = Column(Date, nullable=True)
+    priority = Column(String(20), default="Medium")  # Critical, High, Medium, Low
+    is_constant = Column(Boolean, default=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ProjectConstraint(project={self.project_id}, hours={self.estimated_remaining_hours})>"
+
+
+class DailyPlan(Base):
+    """
+    Phase 6: Stores generated daily work plans.
+    """
+    __tablename__ = "daily_plans"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    plan_date = Column(Date, nullable=False)
+    allocated_minutes = Column(Integer, nullable=False)
+    tasks_planned = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<DailyPlan(project={self.project_id}, date={self.plan_date})>"
