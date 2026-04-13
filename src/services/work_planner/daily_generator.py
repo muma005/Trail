@@ -144,13 +144,22 @@ def _generate_timeline(
 ) -> List[Dict[str, Any]]:
     """
     Generate a detailed timeline with time blocks.
-    Deep work goes in the morning, shallow in the afternoon.
+    Deep work goes in the morning (or during focus peaks), shallow in the afternoon.
     Respects calendar busy slots and inserts switch cost buffers.
     """
     if busy_slots is None:
         busy_slots = []
 
     timeline = []
+
+    # Phase 8: Get focus peaks for scheduling preference
+    try:
+        from src.services.learning.engine import get_learning_engine
+        engine = get_learning_engine()
+        focus_peaks = engine.get_focus_peaks()
+        engine.close()
+    except Exception:
+        focus_peaks = [9, 10]  # Default focus hours
 
     # Separate deep and shallow work
     deep_units = [u for u in work_units if u["type"] == "deep"]
@@ -159,6 +168,10 @@ def _generate_timeline(
     current_time = datetime.combine(target_date, profile.work_start)
     work_end = datetime.combine(target_date, profile.work_end)
     last_project = None
+
+    def is_focus_peak(t: datetime) -> bool:
+        """Check if time is during a focus peak hour."""
+        return t.hour in focus_peaks
 
     def is_busy(t: datetime) -> Optional[Dict[str, Any]]:
         """Check if a time slot conflicts with a meeting."""

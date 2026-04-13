@@ -145,6 +145,14 @@ def verify_date(target_date: date) -> Dict[str, int]:
                     results["verified"] += 1
                     if progress["was_completed"]:
                         results["completed"] += 1
+                        # Phase 8: Learn from completed task
+                        try:
+                            from src.services.learning.engine import get_learning_engine
+                            engine = get_learning_engine()
+                            engine.update_duration_multiplier(str(task_id), str(project_id))
+                            engine.close()
+                        except Exception as e:
+                            logger.warning(f"Duration learning failed for task {task_id}: {e}")
                     elif progress["progress_percentage"] > 0:
                         results["partial"] += 1
                     else:

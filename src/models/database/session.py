@@ -308,6 +308,22 @@ def _run_phase1_migration() -> None:
     CREATE INDEX IF NOT EXISTS idx_time_logs_project ON time_logs(project_id);
     CREATE INDEX IF NOT EXISTS idx_time_logs_source ON time_logs(source);
     CREATE INDEX IF NOT EXISTS idx_time_logs_start ON time_logs(start_time);
+
+    -- Phase 8: Learning & Personalization
+    CREATE TABLE IF NOT EXISTS learned_patterns (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID DEFAULT gen_random_uuid(),
+        pattern_type VARCHAR(50) NOT NULL,
+        context JSONB,
+        value DECIMAL(10,4) NOT NULL,
+        confidence DECIMAL(5,4) DEFAULT 0,
+        sample_count INT DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_learned_patterns_user_type ON learned_patterns(user_id, pattern_type);
+    CREATE INDEX IF NOT EXISTS idx_learned_patterns_context ON learned_patterns USING GIN(context);
+    CREATE INDEX IF NOT EXISTS idx_learned_patterns_type_context ON learned_patterns(pattern_type, context);
     """
 
     db = SessionLocal()

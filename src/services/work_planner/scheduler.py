@@ -164,6 +164,16 @@ def allocate_hours(
             remaining_mins = data["remaining_hours"] * 60
             alloc = min(alloc, remaining_mins)
 
+            # Phase 8: Apply learned project multiplier (empty promise detection)
+            try:
+                from src.services.learning.engine import get_learning_engine
+                engine = get_learning_engine()
+                multiplier = engine.get_project_multiplier(str(pid))
+                engine.close()
+                alloc *= multiplier
+            except Exception:
+                pass  # Keep original allocation if learning fails
+
             scheduled_projects.append({
                 "project_id": pid,
                 "project_key": data["project"].project_key,

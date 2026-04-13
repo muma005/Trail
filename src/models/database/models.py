@@ -538,3 +538,24 @@ class TimeLog(Base):
 
     def __repr__(self):
         return f"<TimeLog(project={self.project_id}, duration={self.duration_minutes}min, source={self.source})>"
+
+
+class LearnedPattern(Base):
+    """
+    Phase 8: Stores learned patterns for personalization.
+    Pattern types: duration_multiplier, focus_peak_hour, empty_promise_multiplier.
+    """
+    __tablename__ = "learned_patterns"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    user_id = Column(UUID(as_uuid=False), default=generate_uuid)
+    pattern_type = Column(String(50), nullable=False)
+    # Using generic Text for context; actual JSON stored as string for SQLite compat
+    context = Column(Text, nullable=True)
+    value = Column(Numeric(10, 4), nullable=False)
+    confidence = Column(Numeric(5, 4), default=0)
+    sample_count = Column(Integer, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<LearnedPattern(type={self.pattern_type}, value={self.value}, samples={self.sample_count})>"
