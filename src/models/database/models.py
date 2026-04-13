@@ -481,3 +481,60 @@ class PlannedTaskVerification(Base):
 
     def __repr__(self):
         return f"<PlannedTaskVerification(task={self.task_id}, completed={self.was_completed}, progress={self.partial_progress_percentage})>"
+
+
+class UntrackedSession(Base):
+    """
+    Phase 7.5: Detected work periods without corresponding commits.
+    """
+    __tablename__ = "untracked_sessions"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    duration_minutes = Column(Integer, nullable=False)
+    resolved = Column(Boolean, default=False)
+    assigned_task_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("notion_tasks.id"),
+        nullable=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<UntrackedSession(project={self.project_id}, duration={self.duration_minutes}min, resolved={self.resolved})>"
+
+
+class TimeLog(Base):
+    """
+    Phase 7.5: Manual or auto-detected work sessions.
+    """
+    __tablename__ = "time_logs"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    task_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("notion_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    user_id = Column(UUID(as_uuid=False), default=generate_uuid)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    duration_minutes = Column(Integer, nullable=False)
+    task_type = Column(String(50), default="manual")  # manual, untracked, prompted
+    source = Column(String(50), default="manual")  # manual, prompted, auto-detected
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<TimeLog(project={self.project_id}, duration={self.duration_minutes}min, source={self.source})>"

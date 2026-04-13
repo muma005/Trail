@@ -276,6 +276,38 @@ def _run_phase1_migration() -> None:
     CREATE INDEX IF NOT EXISTS idx_ptv_task ON planned_task_verification(task_id);
     CREATE INDEX IF NOT EXISTS idx_ptv_verified_at ON planned_task_verification(verified_at);
     CREATE INDEX IF NOT EXISTS idx_ptv_was_completed ON planned_task_verification(was_completed);
+
+    -- Phase 7.5: Untracked sessions and time logs
+    CREATE TABLE IF NOT EXISTS untracked_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+        start_time TIMESTAMP NOT NULL,
+        end_time TIMESTAMP NOT NULL,
+        duration_minutes INT NOT NULL,
+        resolved BOOLEAN DEFAULT FALSE,
+        assigned_task_id UUID REFERENCES notion_tasks(id),
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS time_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+        task_id UUID REFERENCES notion_tasks(id) ON DELETE SET NULL,
+        user_id UUID DEFAULT gen_random_uuid(),
+        start_time TIMESTAMP NOT NULL,
+        end_time TIMESTAMP NOT NULL,
+        duration_minutes INT NOT NULL,
+        task_type VARCHAR(50) DEFAULT 'manual',
+        source VARCHAR(50) DEFAULT 'manual',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_untracked_project ON untracked_sessions(project_id);
+    CREATE INDEX IF NOT EXISTS idx_untracked_resolved ON untracked_sessions(resolved);
+    CREATE INDEX IF NOT EXISTS idx_time_logs_project ON time_logs(project_id);
+    CREATE INDEX IF NOT EXISTS idx_time_logs_source ON time_logs(source);
+    CREATE INDEX IF NOT EXISTS idx_time_logs_start ON time_logs(start_time);
     """
 
     db = SessionLocal()

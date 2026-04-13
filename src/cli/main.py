@@ -25,6 +25,7 @@ from src.cli.commands.task import task
 from src.cli.commands.timeoff import timeoff
 from src.cli.commands.verify import verify
 from src.cli.commands.reassign import reassign
+from src.cli.commands.untracked import untracked
 
 
 @click.group()
@@ -54,6 +55,7 @@ cli.add_command(timeoff)
 cli.add_command(switch_cost)
 cli.add_command(verify)
 cli.add_command(reassign)
+cli.add_command(untracked)
 
 
 if __name__ == "__main__":

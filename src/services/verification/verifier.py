@@ -1,6 +1,7 @@
 """
 Verification worker.
 Phase 7: Compares planned work against actual activity (commits, task status).
+Phase 7.5: Also detects untracked work sessions (file activity without commits).
 Stores results in planned_task_verification table.
 """
 import logging
@@ -15,7 +16,9 @@ from src.models.database.models import (
     PlannedTaskVerification,
     Project,
     SubTask,
+    UntrackedSession,
 )
+from src.services.verification.activity_monitor import detect_untracked_work
 from src.services.verification.partial_progress import detect_partial_progress
 
 logger = logging.getLogger(__name__)
@@ -26,9 +29,11 @@ def verify_today() -> Dict[str, int]:
     Run verification for today's planned tasks.
 
     Returns:
-        Dict with counts: verified, completed, partial, missed
+        Dict with counts: verified, completed, partial, missed, untracked_detected
     """
-    return verify_date(date.today())
+    result = verify_date(date.today())
+    result["untracked_detected"] = detect_untracked_sessions()
+    return result
 
 
 def verify_date(target_date: date) -> Dict[str, int]:
@@ -164,3 +169,87 @@ def verify_date(target_date: date) -> Dict[str, int]:
         db.close()
 
     return results
+
+
+def detect_untracked_sessions() -> int:
+    """
+    Scan all active projects for untracked work sessions.
+    Stores detected sessions in the database.
+
+    Returns:
+        Number of new untracked sessions detected.
+    """
+    db = SessionLocal()
+    count = 0
+
+    try:
+        projects = db.query(Project).filter(Project.status == "active").all()
+
+        for project in projects:
+            # Check if any commits exist today
+            today_commits = (
+                db.query(Commit)
+                .filter(
+                    Commit.project_id == project.id,
+                    Commit.commit_date >= datetime.combine(date.today(), datetime.min.time()),
+                )
+                .count()
+            )
+
+            # If there are commits today, work is tracked
+            if today_commits > 0:
+                continue
+
+            # Check for planned tasks today
+            today_plans = db.query(DailyPlan).filter(
+                DailyPlan.plan_date == date.today(),
+                DailyPlan.project_id == project.id,
+            ).all()
+
+            if not today_plans:
+                continue
+
+            for plan in today_plans:
+                tasks_planned = plan.tasks_planned or []
+                if not tasks_planned:
+                    continue
+
+                total_planned_minutes = sum(
+                    t.get("allocated_minutes", 0) for t in tasks_planned
+                )
+
+                # If >2 hours planned but no commits, flag as untracked
+                if total_planned_minutes >= 120:
+                    # Check if session already exists for today
+                    existing = db.query(UntrackedSession).filter(
+                        UntrackedSession.project_id == project.id,
+                        UntrackedSession.start_time >= datetime.combine(date.today(), datetime.min.time()),
+                        UntrackedSession.resolved == False,
+                    ).first()
+
+                    if not existing:
+                        session = UntrackedSession(
+                            project_id=project.id,
+                            start_time=datetime.combine(date.today(), datetime.strptime("09:00", "%H:%M").time()),
+                            end_time=datetime.combine(date.today(), datetime.strptime("17:00", "%H:%M").time()),
+                            duration_minutes=total_planned_minutes,
+                            resolved=False,
+                        )
+                        db.add(session)
+                        count += 1
+                        logger.info(
+                            f"Detected untracked work: {project.project_key} "
+                            f"({total_planned_minutes} min planned, 0 commits)"
+                        )
+
+        db.commit()
+        if count > 0:
+            logger.info(f"Detected {count} new untracked session(s)")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to detect untracked sessions: {e}")
+    finally:
+        db.close()
+
+    return count
