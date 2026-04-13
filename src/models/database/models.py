@@ -443,3 +443,41 @@ class SwitchCost(Base):
 
     def __repr__(self):
         return f"<SwitchCost(from={self.from_project_id}, to={self.to_project_id}, penalty={self.penalty_minutes})>"
+
+
+class PlannedTaskVerification(Base):
+    """
+    Phase 7: Tracks planned vs actual verification for each task.
+    """
+    __tablename__ = "planned_task_verification"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    daily_plan_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("daily_plans.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    task_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("notion_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    expected_commit_sha = Column(String(40), nullable=True)
+    expected_status_change = Column(String(50), nullable=True)
+    actual_commit_sha = Column(String(40), nullable=True)
+    actual_status = Column(String(50), nullable=True)
+    verified_at = Column(DateTime, default=datetime.utcnow)
+    was_completed = Column(Boolean, default=False)
+    partial_progress_percentage = Column(Numeric(5, 2), nullable=True)
+    remaining_estimate_minutes = Column(Integer, nullable=True)
+    detection_method = Column(String(50), nullable=True)  # commits, status, subtasks, llm
+    missed_reason = Column(Text, nullable=True)
+    reassigned_to_plan_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("daily_plans.id"),
+        nullable=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<PlannedTaskVerification(task={self.task_id}, completed={self.was_completed}, progress={self.partial_progress_percentage})>"

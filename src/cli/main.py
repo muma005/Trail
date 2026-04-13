@@ -17,11 +17,14 @@ from src.cli.commands.orphans import orphans
 from src.cli.commands.plan import plan
 from src.cli.commands.progress import progress
 from src.cli.commands.project import project
+from src.cli.commands.reassign import reassign
 from src.cli.commands.report import report
 from src.cli.commands.switch_cost import switch_cost
 from src.cli.commands.sync import sync
 from src.cli.commands.task import task
 from src.cli.commands.timeoff import timeoff
+from src.cli.commands.verify import verify
+from src.cli.commands.reassign import reassign
 
 
 @click.group()
@@ -49,6 +52,8 @@ cli.add_command(notion)
 cli.add_command(plan)
 cli.add_command(timeoff)
 cli.add_command(switch_cost)
+cli.add_command(verify)
+cli.add_command(reassign)
 
 
 if __name__ == "__main__":
