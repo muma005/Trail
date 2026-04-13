@@ -24,21 +24,44 @@ def plan():
 
 @plan.command("today")
 @click.option("--detail", is_flag=True, default=False, help="Show detailed timeline with time blocks.")
-def plan_today(detail: bool):
+@click.option("--with-deps", is_flag=True, default=False, help="Show dependency resolution details.")
+@click.option("--calendar", is_flag=True, default=False, help="Include Google Calendar events.")
+def plan_today(detail: bool, with_deps: bool, calendar: bool):
     """
     Generate today's work plan.
 
     Shows allocated hours per project. Use --detail for a full timeline.
+    Use --with-deps to see dependency resolution. Use --calendar for meeting blocks.
     """
     try:
         init_db()
 
         from src.services.work_planner.daily_generator import generate_daily_plan
 
-        plan_data = generate_daily_plan(target_date=date.today(), detailed=detail)
+        # Fetch calendar events if requested
+        busy_slots = []
+        if calendar:
+            try:
+                from src.integrations.calendar.google_calendar import GoogleCalendarClient
+                cal = GoogleCalendarClient()
+                busy_slots = cal.get_busy_slots_for_date(date.today())
+                if busy_slots:
+                    console.print(f"[dim]Found {len(busy_slots)} meeting(s) today[/dim]")
+            except Exception as e:
+                console.print(f"[yellow]⚠ Calendar unavailable: {e}[/yellow]")
+
+        plan_data = generate_daily_plan(
+            target_date=date.today(),
+            detailed=detail,
+            busy_slots=busy_slots,
+            with_deps=with_deps,
+        )
 
         if not plan_data["allocations"]:
-            console.print("[yellow]No plan generated — no projects with remaining hours.[/yellow]")
+            if plan_data.get("time_off"):
+                console.print(f"[yellow]🏖️ {plan_data['date']} is a time-off day: {plan_data.get('reason', 'N/A')}[/yellow]")
+            else:
+                console.print("[yellow]No plan generated — no projects with remaining hours.[/yellow]")
             return
 
         # Summary header

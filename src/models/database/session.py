@@ -227,6 +227,31 @@ def _run_phase1_migration() -> None:
     CREATE INDEX IF NOT EXISTS idx_project_constraints_project_id ON project_constraints(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_constraints_deadline ON project_constraints(deadline);
     CREATE INDEX IF NOT EXISTS idx_daily_plans_date ON daily_plans(plan_date);
+
+    -- Phase 6.5: User time-off and switch costs
+    CREATE TABLE IF NOT EXISTS user_time_off (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID DEFAULT gen_random_uuid(),
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        reason VARCHAR(100),
+        is_working BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS switch_costs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        from_project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+        to_project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+        penalty_minutes INT DEFAULT 10,
+        sample_count INT DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (from_project_id, to_project_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_time_off_dates ON user_time_off(start_date, end_date);
+    CREATE INDEX IF NOT EXISTS idx_switch_costs_from ON switch_costs(from_project_id);
+    CREATE INDEX IF NOT EXISTS idx_switch_costs_to ON switch_costs(to_project_id);
     """
 
     db = SessionLocal()

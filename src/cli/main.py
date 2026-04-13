@@ -18,8 +18,10 @@ from src.cli.commands.plan import plan
 from src.cli.commands.progress import progress
 from src.cli.commands.project import project
 from src.cli.commands.report import report
+from src.cli.commands.switch_cost import switch_cost
 from src.cli.commands.sync import sync
 from src.cli.commands.task import task
+from src.cli.commands.timeoff import timeoff
 
 
 @click.group()
@@ -45,6 +47,8 @@ cli.add_command(report)
 cli.add_command(dashboard)
 cli.add_command(notion)
 cli.add_command(plan)
+cli.add_command(timeoff)
+cli.add_command(switch_cost)
 
 
 if __name__ == "__main__":

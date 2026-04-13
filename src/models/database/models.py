@@ -400,3 +400,46 @@ class DailyPlan(Base):
 
     def __repr__(self):
         return f"<DailyPlan(project={self.project_id}, date={self.plan_date})>"
+
+
+class UserTimeOff(Base):
+    """
+    Phase 6.5: Tracks user holidays, PTO, and non-working days.
+    """
+    __tablename__ = "user_time_off"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    user_id = Column(UUID(as_uuid=False), default=generate_uuid)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    reason = Column(String(100), nullable=True)
+    is_working = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<UserTimeOff({self.start_date} to {self.end_date})>"
+
+
+class SwitchCost(Base):
+    """
+    Phase 6.5: Context switch penalties between project pairs.
+    """
+    __tablename__ = "switch_costs"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    from_project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    to_project_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    penalty_minutes = Column(Integer, default=10)
+    sample_count = Column(Integer, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<SwitchCost(from={self.from_project_id}, to={self.to_project_id}, penalty={self.penalty_minutes})>"
