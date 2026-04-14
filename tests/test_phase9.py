@@ -133,6 +133,37 @@ def t10():
     assert 'embedding' in content
 test("Migration: 018_create_conversations.sql correct", t10)
 
+
+# Test 11: Morning briefing generator exists
+def t11():
+    from src.services.report_generator.dispatcher import (
+        generate_morning_briefing,
+        send_morning_briefing,
+        check_celebrations,
+        send_celebrations,
+    )
+    assert callable(generate_morning_briefing)
+    assert callable(send_morning_briefing)
+    assert callable(check_celebrations)
+    assert callable(send_celebrations)
+
+    # Test briefing generation
+    briefing = generate_morning_briefing()
+    assert "Trail Morning Briefing" in briefing
+    assert "Today's Plan" in briefing
+test("Morning briefing & celebration: all functions present", t11)
+
+
+# Test 12: Briefing includes key sections
+def t12():
+    from src.services.report_generator.dispatcher import generate_morning_briefing
+    briefing = generate_morning_briefing()
+    # Check for expected sections
+    assert "Trail Morning Briefing" in briefing
+    assert "Today's Plan" in briefing
+    assert "trail plan today" in briefing or "trail brain" in briefing
+test("Morning briefing: includes key sections", t12)
+
 # Summary
 print(f"\n{'='*40}")
 print(f"Results: {passed} passed, {failed} failed")
