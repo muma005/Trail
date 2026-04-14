@@ -1,6 +1,7 @@
 """
 CLI commands for managing Trail projects.
-Implements `trail project add` and `trail project list`.
+Implements `trail project add`, `trail project list`, `trail project archive`, `trail project resurrect`.
+DEPRECATION: These commands are deprecated. Use `trail brain "..."` instead.
 """
 import sys
 
@@ -36,11 +37,13 @@ from src.utils.helpers.validators import (
 
 console = Console()
 
+DEPRECATION_WARNING = "[bold yellow]⚠️ DEPRECATED:[/bold yellow] Please use [cyan]trail brain \"your request\"[/cyan] instead.\n"
+
 
 @click.group()
 def project():
-    """Manage Trail projects (add, list, archive, resurrect)."""
-    pass
+    """Manage Trail projects. ⚠️ DEPRECATED: Use `trail brain` instead."""
+    console.print(DEPRECATION_WARNING, end="")
 
 
 @project.command("add")

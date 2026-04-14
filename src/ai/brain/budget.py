@@ -18,15 +18,7 @@ BUDGET_ALERT_THRESHOLD = 0.80  # 80%
 
 
 def get_current_month_spend(user_id: Optional[str] = None) -> float:
-    """
-    Get total LLM spend for the current calendar month.
-
-    Args:
-        user_id: User UUID (uses first user if not specified)
-
-    Returns:
-        Total cost in USD
-    """
+    """Get total LLM spend for the current calendar month."""
     db = SessionLocal()
     try:
         now = datetime.utcnow()
@@ -42,7 +34,6 @@ def get_current_month_spend(user_id: Optional[str] = None) -> float:
 
         total = query.with_entities(BudgetTracking.cost).all()
         return float(sum(row[0] for row in total if row[0]))
-
     except Exception as e:
         logger.warning(f"Failed to get current month spend: {e}")
         return 0.0
@@ -57,7 +48,7 @@ def get_budget_limit() -> float:
         prefs = db.query(UserPreference).first()
         if prefs and prefs.llm_budget_monthly_usd:
             return float(prefs.llm_budget_monthly_usd)
-        return 10.00  # Default $10
+        return 10.00
     except Exception as e:
         logger.warning(f"Failed to get budget limit: {e}")
         return 10.00
@@ -69,9 +60,6 @@ def check_budget_alert() -> Optional[str]:
     """
     Check if monthly spend has reached 80% of budget limit.
     Sends alert if threshold crossed and not already alerted today.
-
-    Returns:
-        Alert message string if alert sent, None otherwise.
     """
     try:
         spend = get_current_month_spend()
@@ -81,18 +69,13 @@ def check_budget_alert() -> Optional[str]:
         if spend < threshold:
             return None
 
-        # Check if we already alerted today
         db = SessionLocal()
         try:
             prefs = db.query(UserPreference).first()
             if prefs and prefs.last_budget_alert_sent:
-                last_alert = prefs.last_budget_alert_sent
-                now = datetime.utcnow()
-                # Only alert once per day
-                if last_alert.date() == now.date():
+                if prefs.last_budget_alert_sent.date() == datetime.utcnow().date():
                     return None
 
-            # Send alert
             pct = (spend / limit) * 100 if limit > 0 else 100
             message = (
                 f"⚠️ **Budget Alert**\n\n"
@@ -101,38 +84,26 @@ def check_budget_alert() -> Optional[str]:
                 f"Consider switching to cheaper models or reducing usage."
             )
 
-            # Send via Slack if configured
             try:
                 send_slack_message(message)
             except Exception as e:
                 logger.warning(f"Failed to send budget alert to Slack: {e}")
 
-            # Update last alert timestamp
             if prefs:
                 prefs.last_budget_alert_sent = datetime.utcnow()
                 db.commit()
 
             logger.info(f"Budget alert sent: ${spend:.2f}/${limit:.2f} ({pct:.0f}%)")
             return message
-
         finally:
             db.close()
-
     except Exception as e:
         logger.error(f"Failed to check budget alert: {e}")
         return None
 
 
 def record_llm_usage(cost: float, model: str = "", tokens: int = 0, description: str = "") -> None:
-    """
-    Record LLM API usage for budget tracking.
-
-    Args:
-        cost: Cost in USD
-        model: Model name used
-        tokens: Number of tokens used
-        description: Description of the request
-    """
+    """Record LLM API usage for budget tracking."""
     db = SessionLocal()
     try:
         usage = BudgetTracking(
@@ -144,10 +115,7 @@ def record_llm_usage(cost: float, model: str = "", tokens: int = 0, description:
         )
         db.add(usage)
         db.commit()
-
-        # Check budget alert after recording
         check_budget_alert()
-
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to record LLM usage: {e}")

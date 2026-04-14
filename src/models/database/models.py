@@ -582,3 +582,40 @@ class Conversation(Base):
 
     def __repr__(self):
         return f"<Conversation(session={self.session_id[:8]}, role={self.role}, content={self.content[:30]})>"
+
+
+class UserAchievement(Base):
+    """
+    Phase 9.5: Stores user gamification data - points, streaks, badges.
+    """
+    __tablename__ = "user_achievements"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    user_id = Column(UUID(as_uuid=False), default=generate_uuid)
+    achievement_type = Column(String(50), nullable=False)  # streak, badge, points
+    achievement_name = Column(String(100), nullable=False)
+    value = Column(Integer, default=0)
+    earned_at = Column(DateTime, default=datetime.utcnow)
+    # Stored as text for cross-database compatibility (column name is 'metadata' in DB)
+    achievement_metadata = Column("metadata", Text, nullable=True)
+
+    def __repr__(self):
+        return f"<UserAchievement(type={self.achievement_type}, name={self.achievement_name}, value={self.value})>"
+
+
+class BudgetTracking(Base):
+    """
+    Phase 9.5: Tracks LLM API spending for budget alerts.
+    """
+    __tablename__ = "budget_tracking"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
+    user_id = Column(UUID(as_uuid=False), default=generate_uuid)
+    cost = Column(Numeric(10, 4), nullable=False)
+    model = Column(String(100), nullable=True)
+    tokens_used = Column(Integer, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    description = Column(Text, nullable=True)
+
+    def __repr__(self):
+        return f"<BudgetTracking(cost={self.cost}, model={self.model})>"
